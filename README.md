@@ -1,184 +1,172 @@
-# Cube Buildathon · 02 · Prep Manager
+# AeroPrep AI — Inbound Packaging & Labelling Optical Verification Station
 
-**Commerce Context stream · Round 2 · Individual Build**
-
-> Five agents, one unit, one record that follows it.
-> A physical product arrives, gets prepped, gets shipped, comes back. At every step a person makes a fast judgment that nobody records. **You build the agent that makes one of those judgments, and leaves proof.**
-
-**New here? Read these first:**
-
-1. [`GITHUB-GUIDE.md`](GITHUB-GUIDE.md) explains how to fork the repository, set it up, build and push your work.
-2. [`RULES.md`](RULES.md) covers the repository and engineering rules.
+An AI-powered, multi-agent inbound shipment verification station for e-commerce fulfillment (Amazon FBA & Walmart WFS). AeroPrep AI inspects inbound packaging photographs in real-time, verifying polybag sealing, child suffocation warnings, FNSKU barcode placement, barcode suppression, expiration dates, and handling marks before shipments leave the prep facility.
 
 ---
 
-## Your problem statement: Prep Manager
+## 1. Problem Understanding
 
-|                              |                                                                      |
-| ---------------------------- | -------------------------------------------------------------------- |
-| **Position in the chain**    | Step 2 of 5. Inbound to Amazon.                                      |
-| **Customer**                 | Prep center owner, or self-prepping seller                           |
-| **What gets recorded**       | Compliance proof                                                     |
-| **Who consumes your output** | Recovery Manager (disputed prep fees, lost or damaged inbound units) |
+When sellers and 3PL preparation centers ship products into fulfillment centers like Amazon FBA or Walmart Fulfillment Services (WFS), every single unit must comply with strict inbound packaging and labelling standards. 
 
-A unit is prepped for inbound shipment to Amazon. If the prep is wrong, Amazon charges a defect fee, and it arrives six weeks later attached to a shipment nobody can remember. The prep center has a work order saying what they were supposed to do, and their word that they did it. That is not evidence, and a meaningful share of those fees may be for defects that did not exist when the unit left the building.
+Manual human inspection on high-speed warehouse prep lines is error-prone, subjective, and slow. Even minor oversights trigger severe penalties:
 
-**What the agent checks, from photographs of the prepped unit:**
+- **Unplanned Prep Service Fees & Chargebacks**: Amazon charges between $0.25 to $1.65+ per non-compliant unit for unplanned polybagging, barcode re-labeling, or bubble-wrapping.
+- **Inbound Receiving Delays**: Defective cartons are moved to problem-resolution holding areas, delaying inventory availability by 5 to 21 days during peak seasons.
+- **Safety & Regulatory Fines**: Bags with a 5.0-inch opening or larger that lack a legible CPSIA child suffocation warning violate federal safety regulations (16 CFR § 1500.121).
+- **Dual-Barcode Laser Scanning Clashes**: If the manufacturer's original UPC barcode is left uncovered, warehouse automated conveyor scanners read both barcodes, misrouting or stranding inventory.
+- **Curved Surface Distortion**: Applying flat rectangular FNSKU barcodes across curved surfaces (like bottle rims or cylinders with >15° curvature) warps the barcode bars, making optical laser decoders fail.
+- **Unjustified Chargeback Disputes**: Sellers frequently receive automated penalty chargebacks with no easy way to prove their packaging was 100% compliant at the moment of prep dispatch.
 
-* Polybag present and correctly sealed
-* Suffocation warning present and legible, not obscured by the fold
-* FNSKU label flat, not on a seam, curve or edge
-* Original manufacturer barcode covered
-* Expiry date still legible after wrapping
-* Required handling marks: fragile, liquid, this way up
-
-> **Look the rules up.** Amazon publishes its prep requirements. Do not infer them from examples and do not let a model guess. In a compliance check backed by an evidence record, "we retrieved something similar" is not a defensible answer.
-
-> **The hard constraint.** This touches every unit, not one in five. A prep center works on $0.40 to $1.10 per unit. Your cost per check has to live inside that.
-
-### The chain you are part of
-
-```text
- Supplier delivery      Inbound to Amazon     Outbound to buyer     Customer return        Money back
- ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
- │ 01 Receiving │ ───▶ │ 02 Prep      │ ───▶ │ 03 Pack      │ ───▶ │ 04 Returns   │      │ 05 Recovery  │
- │ condition on │      │ compliance   │      │ contents at  │      │ condition &  │      │ reads all    │
- │ arrival      │      │ proof        │      │ seal         │      │ disposition  │      │ four → claim │
- └──────┬───────┘      └──────┬───────┘      └──────┬───────┘      └──────┬───────┘      └──────▲───────┘
-        └─────────────────────┴─────────────────────┴─────────────────────┴─────────────────────┘
-```
-
-The first four are the same machine: a camera, a model, and a decision bound to a record. What changes is the ruleset, the buyer and the moment. The fifth has no camera. It turns the other four's records into a claim.
-
-Your output has to be usable by another pod. That's deliberate, and it's scored.
+AeroPrep AI eliminates these issues by providing an automated **"Shift-Left" Quality Assurance station** that catches and fixes packaging defects at the prep table before pallets are dispatched.
 
 ---
 
-## Reference data
+## 2. Solution Overview
 
-`data/` holds a **dummy** CSV for reference while you design and build. Its columns and meanings are listed in [`data/README.md`](data/README.md).
+AeroPrep AI combines **Multimodal Vision AI (Google Gemini 3.5/3.6 Flash)**, **Adversarial LLM Reasoning (Groq Cloud Critic)**, and a **Deterministic 2-Stage Spatial Geometry Engine** into an interactive operator station.
 
-**The data is synthetic.** The SKUs, ASINs, FNSKUs, orders, suppliers, operators and amounts are all invented. The requirement flags and fee amounts are **not** Amazon's real rules or fees. Engineering rule 5 applies: look the authoritative rule up. The `photo_refs` paths are placeholders, and no images ship with this repo. Your fixtures and eval set are yours to capture.
-
-All five buildathon repos share the same `unit_id` values (`UNIT-0001` … `UNIT-0100`). You can follow one unit from receiving through recovery, the same way the real records will be joined. In the sample, each unit takes one route: **FBA** (prep, then Amazon ships it and charges fees) or **merchant-fulfilled / 3PL** (the seller packs it). So a unit has a Prep record or a Pack record, never both.
-
----
-
-## How this works
-
-You have a defined problem statement, supporting domain information and an engineering repository to build from. Real products are built backwards from the customer and forwards through the evidence. Understand the customer and operational workflow before writing code, then build and measure whether the solution works.
-
-Every design decision should be testable. A wrong assumption caught early costs less than the same assumption discovered after implementation. You are assessed on that as much as on running software.
-
-### What you're given
-
-* This problem statement
-* A domain brief covering the real economics, fee structures and what a working day in a warehouse looks like *(shared by the organisers)*
-* The engineering rules in [`RULES.md`](RULES.md)
-* Repository data and supporting resources
-* One fully worked package for Returns Manager (customer letter, PR/FAQ, one-pager) as a reference for the standard expected. **Read it. Don't copy it.**
-
-### What you produce
-
-Build your solution in **your own GitHub fork**.
-
-Your final Round 2 submission should include:
-
-* A working Prep Manager
-* A `README.md` explaining your solution, setup, assumptions and limitations
-* An `ARCHITECTURE.md`
-* An eval report/results with numbers and named failure modes
-* A working demo/video
-* A deployment URL, where applicable
-* Your mandatory LinkedIn post URL
-
-## Build and submission flow
-
-```text
-Understand
-    ↓
-Build
-    ↓
-Test
-    ↓
-Evaluate
-    ↓
-Document
-    ↓
-Demo / Deploy
-    ↓
-Submit
-```
-
-Round 2 is an **individual build**.
-
-The official build phase begins on **25 September 2026 at 9:00 AM IST**.
-
-Submissions open from **27 September 2026**.
-
-The final submission deadline is **1 October 2026 at 6:00 PM IST**.
-
-The submission form closes permanently at the deadline. **There is no resubmission.**
-
-All code commits forming your Round 2 submission must be made during the authorised build phase. Do not continue making Round 2 code changes after the build phase ends.
-
-## What we're being straight with you about
-
-* **The core assumption is untested.** Nobody knows yet whether vision models can identify products and verify prep requirements reliably across long-tail catalogues without per-SKU training. Finding out that it doesn't hold, and documenting that clearly, counts as a useful outcome.
-* **Nobody has spoken to a customer yet.** If you can get a real prep center or seller on a call, ask them to rank the five problems by urgency. Don't ask whether they'd buy what you're building.
-* **The background documents disagree in places.** A contradiction is a finding. Raise it as an Issue labelled `finding`.
+### Core Capabilities:
+1. **Multi-Agent Inspection Team**: Instead of relying on a single prompt, 6 specialized agents evaluate every unit:
+   - **Packaging Agent**: Verifies transparent polybag enclosure, opening width, and continuous hermetic seal weld.
+   - **Label Agent**: Verifies FNSKU decodability, verbatim child suffocation warning text, font size scale (10pt–24pt), expiration date visibility, and set labels.
+   - **Barcode Agent**: Inspects UPC suppression and verifies that no dual scannable barcodes are exposed.
+   - **Spatial Agent**: Measures surface planarity, curvature angles (>15° threshold), and seam clearance margins (>= 0.5 inches).
+   - **Rule Agent**: Maps physical detections against authoritative clauses from Amazon FBA 2026, Walmart WFS, and CPSIA.
+   - **Critic Agent (Second Opinion)**: Plays devil's advocate to detect false passes, occluded seals, and subtle compliance risks.
+2. **Multi-Model Vision AI Cascade**: Real-time image perception via Google Gemini Vision, cross-verified with Groq Cloud Critic, with built-in fallbacks to local Ollama and the Stage B spatial engine.
+3. **Interactive Visual Canvas**: High-fidelity rendering with togglable inspection layers (bounding boxes, barcode zones, curvature radar, and spatial coaching vectors).
+4. **Intelligent Re-Inspection**: When visual evidence is ambiguous (e.g., top seal cut off by camera frame, specular glare washing out text), the system doesn't guess—it guides the operator with a targeted photo re-inspection prompt.
+5. **Work Order vs. Physical Reality Comparator**: Validates what the camera actually sees against purchase order directives (e.g., flagging when a work order specified covering a UPC, but the physical UPC remains exposed).
+6. **Dispute Defense Packet & Cryptographic Ledger**: Automatically anchors every completed inspection into a SHA-256 tamper-evident hash chain with an exportable dispute justification packet.
+7. **Batch Analytics & Failure Clustering**: Aggregates shift yield, chargeback fees saved, and Pareto defect clustering to identify faulty workstation jigs or training gaps.
 
 ---
 
-## Evaluation
+## 3. Setup Instructions
 
-Your Round 2 submission is evaluated out of **100 points**:
+### Prerequisites
+- **Node.js**: v18.0.0 or higher (v20+ recommended)
+- **npm**: v9.0.0 or higher
+- Optional: API keys for Google Gemini and Groq Cloud (a built-in spatial geometry engine runs offline if no keys are provided).
 
-| Criterion                                    |  Points |
-| -------------------------------------------- | ------: |
-| Problem Understanding & Solution Relevance   |  **15** |
-| Agent Functionality & Decision Quality       |  **25** |
-| Evaluation, Accuracy & Uncertainty Handling  |  **25** |
-| Evidence, Traceability & Engineering Quality |  **20** |
-| UX, Demo & Documentation                     |  **15** |
-| **TOTAL**                                    | **100** |
+### Installation Steps
 
-For the vision-based portions of the Prep Manager, use an appropriate unseen/held-out evaluation set and report your methodology, results, false positives, false negatives, `UNCERTAIN` cases and failure modes.
+1. **Clone or Open the Repository**:
+   ```bash
+   cd "cube sydon"
+   ```
 
----
+2. **Install Backend Dependencies**:
+   ```bash
+   cd backend
+   npm install
+   ```
 
-## Evidence and decision traceability
+3. **Configure Environment Variables**:
+   In `backend/.env`, configure your port and API keys (template already provided):
+   ```env
+   PORT=5001
+   GEMINI_API_KEY=your_gemini_api_key_here
+   GEMINI_MODEL=gemini-3.6-flash
+   GROQ_API_KEY=your_groq_api_key_here
+   ```
 
-Your Prep Manager should leave evidence behind for its decisions.
+4. **Install Frontend Dependencies**:
+   ```bash
+   cd ../frontend
+   npm install
+   ```
 
-At minimum, the workflow should make it possible to understand:
-
-```text
-What was being prepped?
-        ↓
-What requirements were checked?
-        ↓
-What did the agent observe?
-        ↓
-What verdict was produced?
-        ↓
-Why?
-```
-
-Use the official evidence contract provided by the organisers as the baseline for interoperability with the other Managers.
-
----
-
-## PASS · FAIL · UNCERTAIN
-
-For individual checks:
-
-* **PASS** — the evidence supports the condition.
-* **FAIL** — the evidence shows the condition is not met.
-* **UNCERTAIN** — the evidence is insufficient for a reliable judgment.
-
-`UNCERTAIN` is not simply a low-confidence PASS.
+5. **Run the Automated Regression Test Suite**:
+   Verify that all 10 authoritative compliance scenarios, cryptographic ledger hashing, and multi-agent systems pass:
+   ```bash
+   cd ../backend
+   node test.js
+   ```
 
 ---
 
-*CUBE Buildathon · Commerce Context*
+## 4. Usage Instructions
+
+### Running the Application Locally
+
+1. **Start the Backend Server** (Port `5001`):
+   ```bash
+   cd backend
+   node server.js
+   ```
+   *Expected output*: `PrepManager AI Backend running at http://localhost:5001`
+
+2. **Start the Frontend Development Server** (Port `3000`):
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+   *Expected output*: `VITE ready in ~250ms -> http://localhost:3000/`
+
+3. **Open the Web Application**:
+   Navigate to [http://localhost:3000/](http://localhost:3000/) in your web browser.
+
+---
+
+### Step-by-Step User Workflows
+
+#### 1. Exploring Pre-Loaded Authoritative Scenarios (1–10)
+- In the left sidebar, click through any of the **10 Authoritative Scenarios**:
+  - **Scenario 1 (PASS)**: Teddy bear in sealed polybag with verbatim warning and flat FNSKU.
+  - **Scenario 2 (FAIL)**: Heavyweight hoodie in a 14" polybag lacking suffocation warning.
+  - **Scenario 3 (FAIL)**: FNSKU placed directly over the top heat-seal seam weld (<0.5" clearance).
+  - **Scenario 4 (FAIL)**: FNSKU wrapped across a 38.4° curved bottle rim.
+  - **Scenario 5 (FAIL)**: Polybag with small 8pt warning text (mandates >=14pt).
+  - **Scenario 6 (FAIL)**: Exposed original manufacturer UPC barcode on electronics box.
+  - **Scenario 7 (FAIL)**: FNSKU label occluding manufacturer expiration date.
+  - **Scenario 8 (FAIL)**: Kitchen utensils in unsealed polybag (gap exceeds 0.25").
+  - **Scenario 9 (UNCERTAIN)**: Camera frame cuts off top seal; triggers **Intelligent Re-Inspection**.
+  - **Scenario 10 (FAIL)**: Ceramic mug pair without mandatory "Sold as Set" handling sticker.
+- Observe the **Live Inspection Verdict**, **Dual-Agent Agreement Score**, **Remediation Guide**, and **Visual Coaching Vectors**.
+
+#### 2. Testing Live Vision AI with Custom Package Images
+- Click **"Upload Image"** on the top navigation bar or drag-and-drop any photo from the [`test_images/`](file:///c:/Users/bhars/Downloads/cube%20sydon/test_images) folder:
+  - `sample_1_compliant_polybag.jpg` — Compliant plush toy in sealed polybag (PASS).
+  - `sample_2_curved_bottle.jpg` — Unbagged liquid bottle with curved FNSKU (FAIL).
+  - `sample_3_dual_barcode_box.jpg` — Headphones with exposed UPC barcode (FAIL).
+  - `sample_4_hoodie_no_warning.jpg` — Folded apparel hoodie without warning (FAIL).
+  - `sample_5_unsealed_polybag.jpg` — Kitchen utensil set with gaping open top (FAIL).
+  - `sample_6_covered_expiry.jpg` — Multivitamins with FNSKU covering expiry (FAIL).
+  - `sample_7_sold_as_set.jpg` — Twin mug bundle with "Sold as Set" label (PASS).
+- The system will call the **Gemini Vision + Groq Critic Cascade**, extract bounding boxes, decode barcode text, and render real-time compliance results.
+
+#### 3. Resolving Missing Evidence via Re-Inspection
+- When inspecting **Scenario 9** (or an image where the seal is occluded), the system flags **`UNCERTAIN`**.
+- An amber **Intelligent Re-Inspection Banner** appears with a targeted prompt: *"Please capture the top opening of the polybag so the sealing area is clearly visible."*
+- Click **"Simulate Targeted Capture"** or upload the follow-up photo to resolve the evidence gap into a conclusive verdict.
+
+#### 4. Generating Dispute Packets & Proof-of-Prep Certificates
+- When inspecting a compliant or resolved unit, click **"Generate Dispute Pack"**.
+- View the pre-formatted **Amazon Seller Central / WFS Inbound Dispute Submission** complete with SHA-256 cryptographic proof, PO alignment, and rule citation.
+- Click **"Proof-of-Prep Certificate"** to view and print an audit certificate with a QR code and tamper-evident ledger block index.
+
+#### 5. Station Analytics & Shift Reports
+- Click **"Analytics"** in the top bar to inspect:
+  - First-Pass Yield (Target SLA: >=90%)
+  - Total unplanned prep chargebacks avoided ($)
+  - Pareto defect distribution chart (identifying top failure modes)
+  - Recent inspection audit stream
+
+---
+
+## 5. Assumptions & Limitations
+
+1. **Epistemic Limitation of 2D Cameras (Film Thickness)**:
+   - Standard retail optical cameras cannot measure the microscopic physical thickness of a plastic film (e.g., verifying the mandatory 1.5 mil / 0.0381 mm thickness requirement).
+   - *Design Choice*: The system explicitly tags this rule as **`UNCERTAIN (Epistemic Limitation)`** rather than hallucinating a guess, prompting operators to maintain a periodic physical micrometer batch audit.
+2. **Single-Perspective Optical Occlusion**:
+   - A single 2D camera perspective cannot see the back of a box or polybag.
+   - *Design Choice*: The system includes a **Multi-Angle Verification Mode** (`FRONT`, `BACK`, `TOP_SEAL`) so operators can confirm barcode suppression on all sides.
+3. **Lighting & Glare Thresholds**:
+   - Extreme specular reflection from overhead warehouse high-bay lighting can obscure black barcode bars or fine warning text.
+   - *Design Choice*: The spatial engine computes a glare index; if glare exceeds 40%, the system flags text contrast as uncertain and guides the operator to adjust angle/lighting.
+4. **Barcode Decodability vs. Contrast**:
+   - FNSKU validation verifies standard Code 128 symbology structures, quiet zone margins, and surface planarity. It assumes the camera resolution is at least 720p for optical character recognition.
+5. **Offline Operation Mode**:
+   - If internet connectivity or API keys are unavailable, the system automatically falls back to its built-in **Stage B Spatial Computational Geometry Engine**, guaranteeing zero downtime on warehouse packing lines.
